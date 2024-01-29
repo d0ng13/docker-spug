@@ -1,3 +1,27 @@
+FROM node:16-alpine AS builder
+
+ARG SPUG_VERSION=3.0
+ARG SPUG_GIT_SOURCE=https://github.com/openspug/spug
+
+# 安装依赖
+RUN \
+    apk update && \
+    apk --no-cache add git 
+
+# 获取源代码
+RUN \
+    git clone ${SPUG_GIT_SOURCE} /data/spug && \
+    cd /data/spug && \
+    git checkout ${SPUG_VERSION}
+
+# 构建web页面    
+RUN \
+    cd /data/spug/spug_web && \
+    npm install && \
+    npm run build && \
+    rm -rf /data/spug/spug_web/node_modules
+
+
 FROM ubuntu:22.04
 
 # 版本
@@ -8,10 +32,9 @@ RUN apt-get update && apt install -y default-libmysqlclient-dev libldap2-dev lib
   rsync git curl wget sshfs \
   nginx redis supervisor python3-dev python3-pip
 
-# 安装源代码
-RUN mkdir -p /data/spug
-RUN cd /tmp && wget https://github.com/openspug/spug/archive/refs/tags/v${SPUG_VERSION}.tar.gz -O spug.tar.gz \
-    && tar -xzvf spug.tar.gz -C /data/spug/ --strip-components=1
+# 复制代码
+COPY --from=builder /data/spug/spug_web/build /data/spug/spug_web/build
+COPY --from=builder /data/spug/spug_api /data/spug/spug_api
 
 # 安装pip依赖
 RUN pip3 install --no-cache-dir --upgrade pip
@@ -21,10 +44,6 @@ RUN pip3 install --no-cache-dir \
     mysqlclient \
     apscheduler==3.7.0 \
     user_agents==2.2.0
-
-# 安装编译好的web页面
-RUN cd /tmp && curl -o web.tar.gz https://cdn.spug.cc/spug/web_v${SPUG_VERSION}.tar.gz \
-    && tar -xzvf web.tar.gz -C /data/spug/spug_web/
 
 # mysql数据库相关配置
 ENV MYSQL_DATABASE=spug
